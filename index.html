@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jessica's Client Tracker</title>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,400&display=swap');
+
+  :root {
+    --bg: #0c0c10;
+    --surface: #16161e;
+    --surface2: #1e1e28;
+    --surface3: #262633;
+    --accent: #f0b429;
+    --red: #e05c5c;
+    --green: #4ade80;
+    --blue: #60a5fa;
+    --purple: #a78bfa;
+    --orange: #fb923c;
+    --text: #ede8e3;
+    --muted: #6b6b80;
+    --border: #2a2a38;
+    --carletta: #f0b429;
+    --ahmed: #60a5fa;
+    --palmer: #a78bfa;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+  }
+
+  /* ── HEADER ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 28px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 1.1rem;
+    letter-spacing: -0.02em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .logo-dot {
+    width: 10px; height: 10px;
+    background: var(--accent);
+    border-radius: 50%;
+    box-shadow: 0 0 8px var(--accent);
+  }
+  .header-right { display: flex; align-items: center; gap: 10px; }
+  .week-chip {
+    background: rgba(240,180,41,0.12);
+    color: var(--accent);
+    border: 1px solid rgba(240,180,41,0.3);
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 0.75rem;
+    padding: 5px 12px;
+    border-radius: 20px;
+    letter-spacing: 0.08em;
+  }
+  .btn-sm {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 6px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.82rem;
+    transition: all 0.2s;
+  }
+  .btn-sm:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── LAYOUT ── */
+  .main { max-width: 1080px; margin: 0 auto; padding: 28px 20px 80px; }
+
+  /* ── ALERT BANNER ── */
+  .alert {
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-bottom: 22px;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    font-size: 0.88rem;
+    line-height: 1.6;
+  }
+  .alert-warn {
+    background: rgba(240,180,41,0.07);
+    border: 1px solid rgba(240,180,41,0.25);
+  }
+  .alert-ok {
+    background: rgba(74,222,128,0.06);
+    border: 1px solid rgba(74,222,128,0.2);
+  }
+  .alert-icon { font-size: 1.2rem; flex-shrink: 0; margin-top: 1px; }
+  .alert strong { color: var(--accent); }
+
+  /* ── WEEK NAV ── */
+  .week-nav {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-bottom: 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .week-nav button {
+    background: none;
+    border: none;
+    color: var(--muted);
+    padding: 12px 20px;
+    cursor: pointer;
+    font-size: 1.1rem;
+    transition: all 0.2s;
+    border-right: 1px solid var(--border);
+  }
+  .week-nav button:last-child { border-right: none; border-left: 1px solid var(--border); }
+  .week-nav button:hover { background: var(--surface2); color: var(--text); }
+  .week-nav-center { flex: 1; text-align: center; }
+  .week-nav-title {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 1rem;
+    display: block;
+  }
+  .week-nav-dates { font-size: 0.78rem; color: var(--muted); display: block; margin-top: 2px; }
+
+  /* ── PROGRESS BAR ── */
+  .progress-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-bottom: 22px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  .prog-track {
+    flex: 1;
+    min-width: 180px;
+    height: 6px;
+    background: var(--surface3);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .prog-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--green), #22d3a5);
+    border-radius: 3px;
+    transition: width 0.4s ease;
+  }
+  .prog-stats { display: flex; gap: 16px; flex-wrap: wrap; }
+  .prog-stat { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; }
+  .prog-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .prog-num { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 0.95rem; }
+
+  /* ── CLIENT TABS ── */
+  .client-tabs { display: flex; gap: 8px; margin-bottom: 22px; flex-wrap: wrap; }
+  .client-tab {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface);
+    border: 2px solid var(--border);
+    color: var(--muted);
+    padding: 10px 20px;
+    border-radius: 30px;
+    cursor: pointer;
+    font-family: 'Syne', sans-serif;
+    font-weight: 600;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .client-tab .tab-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .client-tab.active { color: var(--text); background: var(--surface2); }
+  .client-tab.active[data-client="Carletta"] { border-color: var(--carletta); }
+  .client-tab.active[data-client="Ahmed"] { border-color: var(--ahmed); }
+  .client-tab.active[data-client="Palmer"] { border-color: var(--palmer); }
+  .client-tab .tab-badge {
+    font-size: 0.68rem;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: var(--surface3);
+    color: var(--muted);
+  }
+
+  /* ── SECTION HEADERS ── */
+  .section-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 24px 0 12px;
+  }
+  .section-head-label {
+    font-family: 'Syne', sans-serif;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .section-head-pill {
+    font-size: 0.72rem;
+    padding: 3px 10px;
+    border-radius: 10px;
+    background: var(--surface2);
+    white-space: nowrap;
+  }
+  .section-head-line { flex: 1; height: 1px; background: var(--border); }
+  .due-wed { color: var(--orange); border: 1px solid rgba(251,146,60,0.3); }
+  .due-sun { color: var(--blue); border: 1px solid rgba(96,165,250,0.3); }
+
+  /* ── TASK CARDS ── */
+  .tasks-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(295px, 1fr));
+    gap: 10px;
+  }
+  .task-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    position: relative;
+    transition: border-color 0.2s;
+  }
+  .task-card:hover { border-color: var(--surface3); }
+  .task-card::after {
+    content: '';
+    position: absolute;
+    left: 0; top: 8px; bottom: 8px;
+    width: 3px;
+    border-radius: 0 2px 2px 0;
+    background: var(--border);
+    transition: background 0.2s;
+  }
+  .task-card.s-completed::after  { background: var(--green); }
+  .task-card.s-in_progress::after { background: var(--blue); }
+  .task-card.s-missed::after     { background: var(--red); }
+  .task-card.s-not_started::after { background: var(--muted); }
+  .task-card.s-na::after         { background: var(--surface3); }
+
+  .task-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+  .task-title { font-family: 'Syne', sans-serif; font-weight: 600; font-size: 0.88rem; line-height: 1.3; }
+  .task-course { font-size: 0.75rem; margin-bottom: 10px; }
+  .task-due { font-size: 0.68rem; background: var(--surface2); padding: 2px 7px; border-radius: 8px; color: var(--muted); white-space: nowrap; }
+
+  select.status-sel {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 7px 10px;
+    border-radius: 7px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.83rem;
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.2s;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b6b80' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 28px;
+  }
+  select.status-sel:focus { border-color: var(--accent); }
+
+  textarea.notes {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 7px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.8rem;
+    margin-top: 7px;
+    resize: none;
+    height: 46px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  textarea.notes::placeholder { color: var(--muted); }
+  textarea.notes:focus { border-color: var(--accent); }
+
+  /* ── ACTION BAR ── */
+  .action-bar {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+    z-index: 90;
+  }
+  .btn {
+    padding: 10px 22px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 0.83rem;
+    letter-spacing: 0.03em;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    transition: all 0.2s;
+  }
+  .btn-save { background: var(--accent); color: #000; }
+  .btn-save:hover { background: #fdc94d; }
+  .btn-email { background: var(--surface2); border: 1px solid var(--border); color: var(--text); }
+  .btn-email:hover { border-color: var(--blue); color: var(--blue); }
+  .btn-remind { background: var(--surface2); border: 1px solid var(--border); color: var(--text); }
+  .btn-remind:hover { border-color: var(--green); color: var(--green); }
+
+  /* ── MODAL ── */
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 200; display: none; align-items: center; justify-content: center; }
+  .overlay.open { display: flex; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px;
+    max-width: 460px;
+    width: 92%;
+    max-height: 92vh;
+    overflow-y: auto;
+  }
+  .modal h2 { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.15rem; margin-bottom: 6px; }
+  .modal .sub { color: var(--muted); font-size: 0.84rem; margin-bottom: 20px; line-height: 1.5; }
+  .modal label { display: block; font-size: 0.75rem; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin: 14px 0 5px; }
+  .modal input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 9px 13px;
+    border-radius: 7px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.88rem;
+    outline: none;
+  }
+  .modal input:focus { border-color: var(--accent); }
+  .note-box {
+    background: rgba(240,180,41,0.06);
+    border: 1px solid rgba(240,180,41,0.2);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 0.8rem;
+    color: #ccc;
+    line-height: 1.7;
+    margin-top: 14px;
+  }
+  .note-box strong { color: var(--accent); }
+  .modal-btns { display: flex; gap: 8px; margin-top: 20px; }
+
+  /* ── TOAST ── */
+  .toast {
+    position: fixed;
+    bottom: 80px; right: 20px;
+    background: var(--surface);
+    border: 1px solid var(--green);
+    color: var(--text);
+    padding: 12px 18px;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    z-index: 500;
+    display: none;
+    max-width: 300px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+  .toast.show { display: block; animation: fadeUp 0.3s ease; }
+  .toast.err { border-color: var(--red); }
+  @keyframes fadeUp { from { opacity:0; transform: translateY(10px); } to { opacity:1; transform: translateY(0); } }
+
+  /* ── SCROLLBAR ── */
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  @media(max-width:600px) {
+    header { padding: 0 14px; }
+    .main { padding: 18px 12px 80px; }
+    .tasks-grid { grid-template-columns: 1fr; }
+    .action-bar { padding: 10px 12px; }
+    .btn { padding: 9px 14px; font-size: 0.78rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><div class="logo-dot"></div>Jessica's Tracker</div>
+  <div class="header-right">
+    <div class="week-chip" id="weekChip">WEEK 1</div>
+    <button class="btn-sm" onclick="openModal()">⚙ Setup</button>
+  </div>
+</header>
+
+<div class="main">
+
+  <div class="alert alert-warn" id="alertBanner">
+    <div class="alert-icon">📋</div>
+    <div id="alertText">Loading schedule...</div>
+  </div>
+
+  <div class="progress-wrap">
+    <div class="prog-track"><div class="prog-fill" id="progFill" style="width:0%"></div></div>
+    <div class="prog-stats">
+      <div class="prog-stat"><div class="prog-dot" style="background:var(--green)"></div><span class="prog-num" id="cDone">0</span>&nbsp;Done</div>
+      <div class="prog-stat"><div class="prog-dot" style="background:var(--blue)"></div><span class="prog-num" id="cProg">0</span>&nbsp;In Progress</div>
+      <div class="prog-stat"><div class="prog-dot" style="background:var(--red)"></div><span class="prog-num" id="cMiss">0</span>&nbsp;Missed</div>
+      <div class="prog-stat"><div class="prog-dot" style="background:var(--muted)"></div><span class="prog-num" id="cTodo">0</span>&nbsp;Pending</div>
+    </div>
+  </div>
+
+  <div class="week-nav">
+    <button onclick="changeWeek(-1)">‹</button>
+    <div class="week-nav-center">
+      <span class="week-nav-title" id="navTitle">Week 1</span>
+      <span class="week-nav-dates" id="navDates"></span>
+    </div>
+    <button onclick="changeWeek(1)">›</button>
+  </div>
+
+  <div class="client-tabs" id="clientTabs"></div>
+
+  <div id="taskArea"></div>
+
+</div>
+
+<div class="action-bar">
+  <button class="btn btn-save" onclick="saveAll()">💾 Save Progress</button>
+  <button class="btn btn-email" onclick="emailStatusToAdmin()">📧 Email Status to Admin</button>
+  <button class="btn btn-remind" onclick="sendManualReminder()">🔔 Send Reminder to Jessica</button>
+</div>
+
+<!-- Config Modal -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h2>⚙ EmailJS Setup</h2>
+    <p class="sub">Configure once — all automated reminders and status emails will use these settings.</p>
+
+    <label>EmailJS Public Key</label>
+    <input id="cfg_pub" placeholder="e.g. aBcDeFgHiJ..." />
+
+    <label>EmailJS Service ID</label>
+    <input id="cfg_svc" placeholder="service_xxxxxxx" />
+
+    <label>Reminder Template ID <span style="color:var(--muted);font-size:0.7rem;">(→ Jessica)</span></label>
+    <input id="cfg_t1" placeholder="template_xxxxxxx" />
+
+    <label>Status Report Template ID <span style="color:var(--muted);font-size:0.7rem;">(→ Admin)</span></label>
+    <input id="cfg_t2" placeholder="template_xxxxxxx" />
+
+    <label>Jessica's Gmail</label>
+    <input id="cfg_jess" type="email" placeholder="jessica@gmail.com" />
+
+    <label>Your (Admin) Gmail</label>
+    <input id="cfg_admin" type="email" placeholder="you@gmail.com" />
+
+    <div class="note-box">
+      <strong>Templates need 3 variables:</strong><br>
+      <code>{{to_email}}</code> &nbsp;·&nbsp; <code>{{subject}}</code> &nbsp;·&nbsp; <code>{{message}}</code><br><br>
+      <strong>Automated reminders fire automatically:</strong><br>
+      • Mondays 8am → Discussion Post reminders<br>
+      • Fridays 8am → Assignment/Quiz/Response reminders<br>
+      Both run via cron-job.org hitting <code>/reminder.html</code>
+    </div>
+
+    <div class="modal-btns">
+      <button class="btn btn-save" onclick="saveConfig()">Save</button>
+      <button class="btn btn-email" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  CONFIGURATION — hardcoded course data
+// ═══════════════════════════════════════════════════════════════
+
+const START_DATE = '2026-02-23'; // Monday Week 1 — DO NOT CHANGE
+
+const CLIENTS = {
+  Carletta: { color: '#f0b429', courses: ['Course 1', 'Course 2'] },
+  Ahmed:    { color: '#60a5fa', courses: ['Course 1'] },
+  Palmer:   { color: '#a78bfa', courses: ['Course 1', 'Course 2'] }
+};
+
+const TASK_TYPES = [
+  { key: 'disc_post',     label: 'Discussion Post',     icon: '💬', due: 'Wednesday' },
+  { key: 'disc_response', label: 'Discussion Response', icon: '↩️', due: 'Sunday' },
+  { key: 'assignment',    label: 'Assignment',          icon: '📝', due: 'Sunday' },
+  { key: 'quiz',          label: 'Quiz',                icon: '📋', due: 'Sunday' }
+];
+
+const STATUSES = [
+  { v: 'not_started', l: '○  Not Started' },
+  { v: 'in_progress', l: '◑  In Progress' },
+  { v: 'completed',   l: '✓  Completed'   },
+  { v: 'missed',      l: '✕  Missed'      },
+  { v: 'na',          l: '—  N/A'         }
+];
+
+// ═══════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════
+
+let currentWeek   = 1;
+let currentClient = 'Carletta';
+let data          = {}; // data[client][week]['CourseName__taskKey'] = {status, notes}
+
+// ═══════════════════════════════════════════════════════════════
+//  DATES
+// ═══════════════════════════════════════════════════════════════
+
+function weekDates(w) {
+  const base = new Date(START_DATE + 'T00:00:00');
+  const mon  = new Date(base); mon.setDate(base.getDate() + (w-1)*7);
+  const wed  = new Date(mon);  wed.setDate(mon.getDate() + 2);
+  const fri  = new Date(mon);  fri.setDate(mon.getDate() + 4);
+  const sun  = new Date(mon);  sun.setDate(mon.getDate() + 6);
+  const f    = d => d.toLocaleDateString('en-US', { month:'short', day:'numeric' });
+  return { mon, wed, fri, sun, monStr:f(mon), wedStr:f(wed), friStr:f(fri), sunStr:f(sun) };
+}
+
+function autoDetectWeek() {
+  const base = new Date(START_DATE + 'T00:00:00');
+  const now  = new Date();
+  const diff = Math.floor((now - base) / (7*24*3600*1000));
+  return Math.max(1, Math.min(8, diff + 1));
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  DATA ACCESS
+// ═══════════════════════════════════════════════════════════════
+
+function get(client, week, key) {
+  data[client]       = data[client]       || {};
+  data[client][week] = data[client][week] || {};
+  data[client][week][key] = data[client][week][key] || { status:'not_started', notes:'' };
+  return data[client][week][key];
+}
+
+function loadData() {
+  try { data = JSON.parse(localStorage.getItem('jt_data') || '{}'); } catch(e) { data = {}; }
+}
+function saveData() {
+  try { localStorage.setItem('jt_data', JSON.stringify(data)); } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CONFIG
+// ═══════════════════════════════════════════════════════════════
+
+function cfg() {
+  try { return JSON.parse(localStorage.getItem('jt_cfg') || '{}'); } catch(e) { return {}; }
+}
+function saveConfig() {
+  const c = {
+    pub:   document.getElementById('cfg_pub').value.trim(),
+    svc:   document.getElementById('cfg_svc').value.trim(),
+    t1:    document.getElementById('cfg_t1').value.trim(),
+    t2:    document.getElementById('cfg_t2').value.trim(),
+    jess:  document.getElementById('cfg_jess').value.trim(),
+    admin: document.getElementById('cfg_admin').value.trim()
+  };
+  localStorage.setItem('jt_cfg', JSON.stringify(c));
+  if (c.pub) emailjs.init(c.pub);
+  closeModal();
+  toast('✅ Configuration saved!');
+}
+function openModal() {
+  const c = cfg();
+  document.getElementById('cfg_pub').value   = c.pub   || '';
+  document.getElementById('cfg_svc').value   = c.svc   || '';
+  document.getElementById('cfg_t1').value    = c.t1    || '';
+  document.getElementById('cfg_t2').value    = c.t2    || '';
+  document.getElementById('cfg_jess').value  = c.jess  || '';
+  document.getElementById('cfg_admin').value = c.admin || '';
+  document.getElementById('overlay').classList.add('open');
+}
+function closeModal() { document.getElementById('overlay').classList.remove('open'); }
+
+// ═══════════════════════════════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════════════════════════════
+
+function render() {
+  renderNav();
+  renderAlert();
+  renderClientTabs();
+  renderTasks();
+  renderProgress();
+}
+
+function renderNav() {
+  const d = weekDates(currentWeek);
+  document.getElementById('weekChip').textContent  = `WEEK ${currentWeek}`;
+  document.getElementById('navTitle').textContent  = `Week ${currentWeek} of 8`;
+  document.getElementById('navDates').textContent  = `${d.monStr} – ${d.sunStr}`;
+}
+
+function renderAlert() {
+  const now = new Date();
+  const dow = now.getDay(); // 0=Sun,1=Mon,...6=Sat
+  const d   = weekDates(currentWeek);
+  let icon  = '📋', cls = 'alert-warn', msg = '';
+
+  if (dow === 1)      msg = `<strong>It's Monday!</strong> Remind Jessica — Discussion Posts are due <strong>Wednesday ${d.wedStr}</strong>.`;
+  else if (dow === 3) msg = `<strong>Today is Wednesday ${d.wedStr}</strong> — Discussion Posts are <strong>due today!</strong> ⚠️`;
+  else if (dow === 5) msg = `<strong>It's Friday!</strong> Assignments, Quizzes & Responses are due <strong>Sunday ${d.sunStr}</strong>.`;
+  else if (dow === 0) msg = `<strong>Today is Sunday ${d.sunStr}</strong> — Assignments, Quizzes & Responses are <strong>due today!</strong> ⚠️`;
+  else                msg = `Week ${currentWeek}: Discussions due Wed ${d.wedStr} &nbsp;·&nbsp; Assignments, Quizzes & Responses due Sun ${d.sunStr}`;
+
+  const b = document.getElementById('alertBanner');
+  const t = document.getElementById('alertText');
+  b.className = `alert ${cls}`;
+  t.innerHTML = msg;
+}
+
+function renderClientTabs() {
+  const el = document.getElementById('clientTabs');
+  el.innerHTML = Object.entries(CLIENTS).map(([name, {color, courses}]) => `
+    <div class="client-tab ${name===currentClient?'active':''}"
+         data-client="${name}"
+         onclick="selectClient('${name}',this)">
+      <div class="tab-dot" style="background:${color}"></div>
+      ${name}
+      <span class="tab-badge">${courses.length} course${courses.length>1?'s':''}</span>
+    </div>
+  `).join('');
+}
+
+function renderTasks() {
+  const {courses, color} = CLIENTS[currentClient];
+  const d = weekDates(currentWeek);
+  let html = '';
+
+  // Wednesday section
+  html += `<div class="section-head">
+    <div class="section-head-label">Wednesday</div>
+    <div class="section-head-pill due-wed">Due ${d.wedStr}</div>
+    <div class="section-head-line"></div>
+  </div>
+  <div class="tasks-grid">`;
+  for (const course of courses) {
+    const t = TASK_TYPES[0];
+    const k = `${course}__${t.key}`;
+    const td = get(currentClient, currentWeek, k);
+    html += cardHTML(course, t, k, td, color);
+  }
+  html += `</div>`;
+
+  // Sunday section
+  html += `<div class="section-head">
+    <div class="section-head-label">Sunday</div>
+    <div class="section-head-pill due-sun">Due ${d.sunStr}</div>
+    <div class="section-head-line"></div>
+  </div>
+  <div class="tasks-grid">`;
+  for (const course of courses) {
+    for (const t of TASK_TYPES.slice(1)) {
+      const k = `${course}__${t.key}`;
+      const td = get(currentClient, currentWeek, k);
+      html += cardHTML(course, t, k, td, color);
+    }
+  }
+  html += `</div>`;
+
+  document.getElementById('taskArea').innerHTML = html;
+}
+
+function cardHTML(course, t, k, td, color) {
+  const opts = STATUSES.map(s =>
+    `<option value="${s.v}" ${td.status===s.v?'selected':''}>${s.l}</option>`
+  ).join('');
+  const safe_k = k.replace(/'/g, "\\'");
+  return `
+    <div class="task-card s-${td.status}" id="card_${k}">
+      <div class="task-top">
+        <div class="task-title">${t.icon} ${t.label}</div>
+        <div class="task-due">${t.due}</div>
+      </div>
+      <div class="task-course" style="color:${color}">${currentClient} — ${course}</div>
+      <select class="status-sel"
+        onchange="setStatus('${currentClient}',${currentWeek},'${safe_k}',this.value,'card_${k}')">
+        ${opts}
+      </select>
+      <textarea class="notes" placeholder="Notes..."
+        oninput="setNotes('${currentClient}',${currentWeek},'${safe_k}',this.value)">${td.notes||''}</textarea>
+    </div>`;
+}
+
+function renderProgress() {
+  const wdata = data[currentClient]?.[currentWeek] || {};
+  const counts = { completed:0, in_progress:0, missed:0, not_started:0 };
+  for (const v of Object.values(wdata)) {
+    if (v.status === 'na') continue;
+    counts[v.status] = (counts[v.status]||0) + 1;
+  }
+  const total = CLIENTS[currentClient].courses.length * 4;
+  const tracked = Object.values(wdata).filter(v => v.status !== 'na').length;
+  const pending = total - tracked + (counts.not_started || 0);
+  const pct = total > 0 ? Math.round((counts.completed / total) * 100) : 0;
+
+  document.getElementById('progFill').style.width = pct + '%';
+  document.getElementById('cDone').textContent = counts.completed  || 0;
+  document.getElementById('cProg').textContent = counts.in_progress|| 0;
+  document.getElementById('cMiss').textContent = counts.missed     || 0;
+  document.getElementById('cTodo').textContent = Math.max(0, pending);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  INTERACTIONS
+// ═══════════════════════════════════════════════════════════════
+
+function selectClient(name) {
+  currentClient = name;
+  render();
+}
+
+function changeWeek(d) {
+  currentWeek = Math.max(1, Math.min(8, currentWeek + d));
+  render();
+}
+
+function setStatus(client, week, key, value, cardId) {
+  get(client, week, key).status = value;
+  const el = document.getElementById(cardId);
+  if (el) el.className = `task-card s-${value}`;
+  renderProgress();
+}
+
+function setNotes(client, week, key, value) {
+  get(client, week, key).notes = value;
+}
+
+function saveAll() {
+  saveData();
+  toast('✅ Progress saved!');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  EMAIL HELPERS
+// ═══════════════════════════════════════════════════════════════
+
+function sendEmail(templateId, toEmail, subject, message) {
+  const c = cfg();
+  if (!c.pub || !c.svc || !templateId) {
+    toast('⚠️ Configure EmailJS first — click ⚙ Setup', true);
+    return Promise.reject('not configured');
+  }
+  emailjs.init(c.pub);
+  return emailjs.send(c.svc, templateId, { to_email: toEmail, subject, message });
+}
+
+function buildStatusReport() {
+  const d = weekDates(currentWeek);
+  let r = `JESSICA'S TRACKER — Week ${currentWeek} Status Report\n`;
+  r += `Generated: ${new Date().toLocaleString()}\n`;
+  r += `Period: ${d.monStr} – ${d.sunStr}\n`;
+  r += '═'.repeat(50) + '\n\n';
+  for (const [client, {courses}] of Object.entries(CLIENTS)) {
+    r += `CLIENT: ${client.toUpperCase()}\n`;
+    for (const course of courses) {
+      r += `  ${course}\n`;
+      for (const t of TASK_TYPES) {
+        const k  = `${course}__${t.key}`;
+        const td = data[client]?.[currentWeek]?.[k] || { status:'not_started', notes:'' };
+        const sl = STATUSES.find(s=>s.v===td.status)?.l || td.status;
+        r += `    ${t.icon} ${t.label} (${t.due}): ${sl}`;
+        if (td.notes) r += ` | Note: ${td.notes}`;
+        r += '\n';
+      }
+    }
+    r += '\n';
+  }
+  return r;
+}
+
+function buildReminderMsg(day) {
+  const w = autoDetectWeek();
+  const d = weekDates(w);
+  let msg = `Hi Jessica!\n\nWeek ${w} of 8 reminder:\n\n`;
+  if (day === 'monday') {
+    msg += `📌 DISCUSSION POSTS due Wednesday ${d.wedStr}:\n\n`;
+    for (const [client, {courses}] of Object.entries(CLIENTS)) {
+      msg += `${client}:\n`;
+      for (const course of courses) {
+        const k  = `${course}__disc_post`;
+        const td = data[client]?.[w]?.[k] || { status:'not_started' };
+        const sl = STATUSES.find(s=>s.v===td.status)?.l || td.status;
+        const flag = (td.status==='not_started'||td.status==='missed') ? ' ⚠️' : '';
+        msg += `  • ${course}: ${sl}${flag}\n`;
+      }
+      msg += '\n';
+    }
+  } else {
+    msg += `📌 Due Sunday ${d.sunStr}:\n\n`;
+    for (const [client, {courses}] of Object.entries(CLIENTS)) {
+      msg += `${client}:\n`;
+      for (const course of courses) {
+        for (const t of TASK_TYPES.slice(1)) {
+          const k  = `${course}__${t.key}`;
+          const td = data[client]?.[w]?.[k] || { status:'not_started' };
+          const sl = STATUSES.find(s=>s.v===td.status)?.l || td.status;
+          const flag = (td.status==='not_started'||td.status==='missed') ? ' ⚠️' : '';
+          msg += `  • ${course} — ${t.label}: ${sl}${flag}\n`;
+        }
+      }
+      msg += '\n';
+    }
+  }
+  msg += `Track it: ${window.location.origin}\n\nYou've got this! 💪`;
+  return msg;
+}
+
+function emailStatusToAdmin() {
+  saveData();
+  const c = cfg();
+  const w = currentWeek;
+  const d = weekDates(w);
+  sendEmail(c.t2, c.admin,
+    `Week ${w} Status Report — Jessica's Clients`,
+    buildStatusReport()
+  ).then(() => toast('✅ Status report sent to admin!'))
+   .catch(() => toast('❌ Email failed — check Setup config', true));
+}
+
+function sendManualReminder() {
+  const c   = cfg();
+  const dow = new Date().getDay();
+  const day = dow === 1 ? 'monday' : 'friday';
+  sendEmail(c.t1, c.jess,
+    `Week ${autoDetectWeek()} Reminder — Tasks Due`,
+    buildReminderMsg(day)
+  ).then(() => toast('✅ Reminder sent to Jessica!'))
+   .catch(() => toast('❌ Email failed — check Setup config', true));
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TOAST
+// ═══════════════════════════════════════════════════════════════
+
+function toast(msg, isErr=false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (isErr?' err':'');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), 3500);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════════
+
+loadData();
+const _cfg = cfg();
+if (_cfg.pub) emailjs.init(_cfg.pub);
+currentWeek = autoDetectWeek();
+render();
+</script>
+</body>
+</html>

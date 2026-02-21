@@ -1,0 +1,334 @@
+
+╔══════════════════════════════════════════════════════════════════╗
+║       JESSICA'S TRACKER — COMPLETE SETUP GUIDE                  ║
+║       AWS Ubuntu + Nginx + EmailJS + cron-job.org                ║
+╚══════════════════════════════════════════════════════════════════╝
+
+Schedule: Week 1 = Feb 23, 2026 → Week 8 ends Apr 19, 2026
+
+  Mon reminders (Discussion Posts → due Wed):
+    Feb 23 | Mar 2 | Mar 9 | Mar 16 | Mar 23 | Mar 30 | Apr 6 | Apr 13
+
+  Fri reminders (Assignments/Quizzes/Responses → due Sun):
+    Feb 27 | Mar 6 | Mar 13 | Mar 20 | Mar 27 | Apr 3 | Apr 10 | Apr 17
+
+Files:
+  index.html      ← main tracker (Jessica uses this)
+  reminder.html   ← auto-trigger (cron-job.org hits this)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ PART 1 — AWS EC2 SETUP
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+If your server is already running, skip to Part 2.
+
+1. Log in to AWS Console → EC2 → Instances
+2. Launch Instance (if needed):
+   - AMI: Ubuntu Server 24.04 LTS
+   - Instance type: t2.micro (free tier)
+   - Key pair: create or use existing .pem file
+   - Security Group — MUST have these inbound rules:
+       Type        Port    Source
+       SSH         22      Your IP (or 0.0.0.0/0 for open)
+       HTTP        80      0.0.0.0/0
+       HTTPS       443     0.0.0.0/0
+
+3. After launch, get your PUBLIC IP from EC2 dashboard.
+
+4. SSH into server:
+   chmod 400 your-key.pem
+   ssh -i your-key.pem ubuntu@YOUR_EC2_PUBLIC_IP
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ PART 2 — NGINX SETUP (keeps mkno site intact)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Run these commands on your server:
+
+# Install nginx if not already installed
+sudo apt update && sudo apt install nginx -y
+
+# Create the tracker directory
+sudo mkdir -p /var/www/jessica-tracker
+sudo chown -R ubuntu:ubuntu /var/www/jessica-tracker
+sudo chmod -R 755 /var/www/jessica-tracker
+
+# Create the nginx config for the tracker
+sudo nano /etc/nginx/sites-available/jessica-tracker
+
+  ┌─ Paste this inside (replace tracker.yourdomain.com) ─────────┐
+  │                                                                │
+  │  server {                                                      │
+  │      listen 80;                                                │
+  │      listen [::]:80;                                           │
+  │      server_name tracker.yourdomain.com;                       │
+  │                                                                │
+  │      root /var/www/jessica-tracker;                            │
+  │      index index.html;                                         │
+  │                                                                │
+  │      location / {                                              │
+  │          try_files $uri $uri/ =404;                            │
+  │      }                                                         │
+  │                                                                │
+  │      access_log /var/log/nginx/tracker-access.log;             │
+  │      error_log  /var/log/nginx/tracker-error.log;              │
+  │  }                                                             │
+  └────────────────────────────────────────────────────────────────┘
+
+  Save: Ctrl+O → Enter → Ctrl+X
+
+# If you don't have a domain, use your EC2 IP instead:
+#   server_name 54.123.45.67;  (your actual IP)
+
+# Enable the site
+sudo ln -s /etc/nginx/sites-available/jessica-tracker \
+           /etc/nginx/sites-enabled/
+
+# Test config — MUST say "syntax is ok"
+sudo nginx -t
+
+# Reload nginx
+sudo systemctl reload nginx
+
+# Verify mkno is still running (your existing site is NOT touched)
+sudo nginx -T | grep server_name
+# You should see BOTH your mkno domain AND tracker domain
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ PART 3 — UPLOAD FILES TO SERVER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+From your LOCAL machine (run these in your local terminal):
+
+scp -i your-key.pem index.html ubuntu@YOUR_EC2_IP:/var/www/jessica-tracker/
+scp -i your-key.pem reminder.html ubuntu@YOUR_EC2_IP:/var/www/jessica-tracker/
+
+Verify on the server:
+  ls -la /var/www/jessica-tracker/
+  # Should show: index.html  reminder.html
+
+Test in browser:
+  http://YOUR_EC2_IP/           → tracker loads
+  http://YOUR_EC2_IP/reminder.html?day=monday  → shows "Not configured yet"
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ PART 4 — FREE SSL WITH LET'S ENCRYPT (needs a domain name)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Only do this if you have a domain name pointed to your EC2 IP.
+Skip if using IP address directly.
+
+sudo apt install certbot python3-certbot-nginx -y
+sudo certbot --nginx -d tracker.yourdomain.com
+
+# Auto-renewal is set up automatically. Test it:
+sudo certbot renew --dry-run
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ PART 5 — EMAILJS SETUP (free, ~5 minutes)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Go to https://emailjs.com → Create free account
+
+2. Connect Gmail:
+   Left menu → Email Services → Add New Service
+   → Choose Gmail → Connect Account
+   → Authorize with your Gmail
+   → Note the SERVICE ID (e.g. service_abc1234)
+
+3. Create Reminder Template (emails to Jessica):
+   Left menu → Email Templates → Create New Template
+   Name: "Reminder"
+   Fill in:
+     To Email:  {{to_email}}
+     Subject:   {{subject}}
+     Body:      {{message}}
+   Save → note TEMPLATE ID (e.g. template_rem5678)
+
+4. Create Status Template (emails to admin/you):
+   Create another template, name it "Status Report"
+   Same three variables: {{to_email}}, {{subject}}, {{message}}
+   Save → note this second TEMPLATE ID (e.g. template_sta9012)
+
+5. Get Public Key:
+   Top right → Account → API Keys
+   Copy the PUBLIC KEY (e.g. aBcDeFgHiJkLmNoP)
+
+   YOUR VALUES:
+   ┌─────────────────────────────────────────────────────┐
+   │ Public Key:    _________________________________     │
+   │ Service ID:    _________________________________     │
+   │ Reminder TID:  _________________________________     │
+   │ Status TID:    _________________________________     │
+   └─────────────────────────────────────────────────────┘
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ PART 6 — CONFIGURE reminder.html WITH YOUR EMAILJS KEYS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+On your LOCAL machine, open reminder.html in any text editor.
+Find this block near the top:
+
+  const CONFIG = {
+    publicKey:  "YOUR_EMAILJS_PUBLIC_KEY",
+    serviceId:  "YOUR_EMAILJS_SERVICE_ID",
+    templateId: "YOUR_EMAILJS_REMINDER_TEMPLATE",
+    adminTempl: "YOUR_EMAILJS_STATUS_TEMPLATE",
+    jessEmail:  "jessica@gmail.com",
+    adminEmail: "you@gmail.com"
+  };
+
+Replace every value with your real ones. Example:
+
+  const CONFIG = {
+    publicKey:  "aBcDeFgHiJkLmNoP",
+    serviceId:  "service_abc1234",
+    templateId: "template_rem5678",
+    adminTempl: "template_sta9012",
+    jessEmail:  "jessica.actual@gmail.com",
+    adminEmail: "youremail@gmail.com"
+  };
+
+Re-upload to server:
+  scp -i your-key.pem reminder.html ubuntu@YOUR_EC2_IP:/var/www/jessica-tracker/
+
+Test it:
+  Open http://YOUR_EC2_IP/reminder.html?day=monday in browser
+  Should say "✅ Done — emails sent"
+  Check Jessica's Gmail — should have received the reminder!
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ PART 7 — CONFIGURE index.html (the main tracker)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Open http://YOUR_EC2_IP in browser (or your domain)
+2. Click ⚙ Setup button (top right)
+3. Fill in all your EmailJS details + Jessica's email + your email
+4. Click Save
+   (These are stored in browser localStorage on Jessica's device)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ PART 8 — CRON-JOB.ORG (fully automated Monday + Friday emails)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Go to https://cron-job.org → Sign Up (free)
+
+2. Create Job 1 — Monday Reminder:
+   ┌───────────────────────────────────────────────────────────┐
+   │ Title:    Jessica Monday Reminder                         │
+   │ URL:      http://YOUR_EC2_IP/reminder.html?day=monday     │
+   │           (or https://tracker.yourdomain.com/reminder...) │
+   │ Method:   GET                                             │
+   │ Schedule: Custom Cron Expression:  0 8 * * 1             │
+   │           (Every Monday at 8:00 AM)                       │
+   │ Timezone: YOUR timezone (e.g. America/New_York)           │
+   └───────────────────────────────────────────────────────────┘
+
+3. Create Job 2 — Friday Reminder:
+   ┌───────────────────────────────────────────────────────────┐
+   │ Title:    Jessica Friday Reminder                         │
+   │ URL:      http://YOUR_EC2_IP/reminder.html?day=friday     │
+   │ Method:   GET                                             │
+   │ Schedule: Custom Cron Expression:  0 8 * * 5             │
+   │           (Every Friday at 8:00 AM)                       │
+   │ Timezone: YOUR timezone                                   │
+   └───────────────────────────────────────────────────────────┘
+
+4. Test both jobs:
+   Click each job → "Run now" button
+   Check the execution log — should show HTTP 200
+   Check Jessica's Gmail — emails should arrive!
+
+That's it. cron-job.org will automatically hit those URLs every
+Monday and Friday morning for the full 8 weeks. No server code
+needed. Completely free.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ PART 9 — OPTIONAL: PASSWORD PROTECT THE TRACKER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+So only Jessica (and you) can access it:
+
+sudo apt install apache2-utils -y
+sudo htpasswd -c /etc/nginx/.htpasswd jessica
+  → Enter a password when prompted
+
+sudo nano /etc/nginx/sites-available/jessica-tracker
+  → Inside the location / block, add:
+      auth_basic "Jessica's Tracker";
+      auth_basic_user_file /etc/nginx/.htpasswd;
+
+sudo nginx -t && sudo systemctl reload nginx
+
+IMPORTANT: If you add password protection, cron-job.org needs
+to send the password too. In the cron-job.org job settings,
+add HTTP Authentication with username/password. OR keep
+reminder.html on a separate unprotected path.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ QUICK REFERENCE — FULL AUTOMATED REMINDER SCHEDULE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  WEEK  MONDAY           WEDNESDAY        FRIDAY           SUNDAY
+  ────  ───────────────  ───────────────  ───────────────  ──────────────
+   1    Feb 23 (remind)  Feb 25 (disc)    Feb 27 (remind)  Mar 1  (due)
+   2    Mar 2  (remind)  Mar 4  (disc)    Mar 6  (remind)  Mar 8  (due)
+   3    Mar 9  (remind)  Mar 11 (disc)    Mar 13 (remind)  Mar 15 (due)
+   4    Mar 16 (remind)  Mar 18 (disc)    Mar 20 (remind)  Mar 22 (due)
+   5    Mar 23 (remind)  Mar 25 (disc)    Mar 27 (remind)  Mar 29 (due)
+   6    Mar 30 (remind)  Apr 1  (disc)    Apr 3  (remind)  Apr 5  (due)
+   7    Apr 6  (remind)  Apr 8  (disc)    Apr 10 (remind)  Apr 12 (due)
+   8    Apr 13 (remind)  Apr 15 (disc)    Apr 17 (remind)  Apr 19 (due)
+
+  cron-job.org fires:   Every Monday  8am → ?day=monday
+                        Every Friday  8am → ?day=friday
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ TROUBLESHOOTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+nginx won't start:
+  sudo nginx -t          ← shows exact error and line number
+  sudo journalctl -xe    ← full system logs
+
+Site not loading:
+  sudo systemctl status nginx
+  sudo ufw status        ← make sure port 80/443 not blocked
+  Check AWS Security Group has port 80 open
+
+EmailJS not sending:
+  Open browser DevTools → Console tab → look for errors
+  Check emailjs.com dashboard → Email Logs for failures
+  Verify Gmail is still authorized (re-authorize if needed)
+  Free tier: 200 emails/month (16 auto + manual = ~20/month ✓)
+
+cron-job.org shows error:
+  Click the job → View History → see HTTP status code
+  HTTP 200 = success | HTTP 404 = wrong URL | HTTP 5xx = server error
+  Test URL manually in browser first
+  Make sure EC2 security group has port 80 open
+
+reminder.html sends email but shows wrong week:
+  Check your server timezone matches cron-job.org timezone
+  The week is auto-calculated from Feb 23, 2026 start date
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ YOUR MKNO SITE — ZERO IMPACT GUARANTEE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ✓  Different server block (different server_name directive)
+  ✓  Different root directory (/var/www/mkno vs /var/www/jessica-tracker)
+  ✓  Different log files
+  ✓  nginx routes by domain name — completely isolated
+  ✓  Only shared: port 80/443 on the same IP (nginx handles this)
