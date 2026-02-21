@@ -47,8 +47,13 @@ $STATUS_LABELS = [
 
 $cronSecret = appCronSecret();
 if ($cronSecret !== '') {
-    $secret = (string) ($_GET['secret'] ?? '');
-    if (!hash_equals($cronSecret, $secret)) {
+    $secret = trim((string) ($_GET['secret'] ?? ''));
+    $fromReminderPage = isTrustedReminderReferrer();
+    $secretOk = $secret !== '' && hash_equals($cronSecret, $secret);
+
+    // Allow direct browser access from reminder.html without exposing secret.
+    // All other direct callers (cron/apps) must send ?secret=...
+    if (!$secretOk && !$fromReminderPage) {
         http_response_code(403);
         echo json_encode(['ok' => false, 'error' => 'unauthorized']);
         exit;
@@ -276,4 +281,22 @@ function extractDayParam(): string
     }
 
     return '';
+}
+
+function isTrustedReminderReferrer(): bool
+{
+    $ref = (string) ($_SERVER['HTTP_REFERER'] ?? '');
+    if ($ref === '') {
+        return false;
+    }
+
+    $refHost = (string) parse_url($ref, PHP_URL_HOST);
+    $reqHost = (string) ($_SERVER['HTTP_HOST'] ?? '');
+    $reqHost = preg_replace('/:\d+$/', '', $reqHost) ?? $reqHost;
+    if ($refHost === '' || $reqHost === '' || strcasecmp($refHost, $reqHost) !== 0) {
+        return false;
+    }
+
+    $refPath = (string) parse_url($ref, PHP_URL_PATH);
+    return str_ends_with($refPath, '/reminder.html') || $refPath === 'reminder.html';
 }
