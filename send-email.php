@@ -23,12 +23,27 @@ $raw = file_get_contents('php://input');
 $payload = json_decode((string) $raw, true);
 
 $toEmail = trim((string) ($payload['to_email'] ?? ''));
+$recipientKey = strtolower(trim((string) ($payload['recipient_key'] ?? '')));
 $subject = trim((string) ($payload['subject'] ?? ''));
 $message = (string) ($payload['message'] ?? '');
 
-if ($toEmail === '' || $subject === '' || $message === '') {
+if ($subject === '' || $message === '') {
     http_response_code(400);
     echo json_encode(['ok' => false, 'error' => 'missing_fields']);
+    exit;
+}
+
+if ($toEmail === '') {
+    if ($recipientKey === 'jess' || $recipientKey === 'jessica') {
+        $toEmail = appDefaultJessicaEmail();
+    } elseif ($recipientKey === 'admin') {
+        $toEmail = appDefaultAdminEmail();
+    }
+}
+
+if ($toEmail === '') {
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'error' => 'missing_recipient']);
     exit;
 }
 

@@ -773,9 +773,9 @@ async function saveAll() {
 //  EMAIL HELPERS
 // ═══════════════════════════════════════════════════════════════
 
-async function sendEmail(_templateId, toEmail, subject, message) {
-  if (!toEmail || !subject || !message) {
-    toast('⚠️ Missing email fields in setup.', true);
+async function sendEmail(_templateId, toEmail, subject, message, recipientKey='') {
+  if (!subject || !message) {
+    toast('⚠️ Missing email content.', true);
     throw new Error('missing_fields');
   }
 
@@ -784,6 +784,7 @@ async function sendEmail(_templateId, toEmail, subject, message) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       to_email: toEmail,
+      recipient_key: recipientKey,
       subject,
       message
     })
@@ -864,7 +865,8 @@ function emailStatusToAdmin() {
   const d = weekDates(w);
   sendEmail('', c.admin,
     `Week ${w} Status Report — Jessica's Clients`,
-    buildStatusReport()
+    buildStatusReport(),
+    'admin'
   ).then(() => toast('✅ Status report sent to admin!'))
    .catch((e) => toast(`❌ Email failed: ${e?.message || 'server error'}`, true));
 }
@@ -875,7 +877,8 @@ function sendManualReminder() {
   const day = dow === 1 ? 'monday' : 'friday';
   sendEmail('', c.jess,
     `Week ${autoDetectWeek()} Reminder — Tasks Due`,
-    buildReminderMsg(day)
+    buildReminderMsg(day),
+    'jess'
   ).then(() => toast('✅ Reminder sent to Jessica!'))
    .catch((e) => toast(`❌ Email failed: ${e?.message || 'server error'}`, true));
 }
