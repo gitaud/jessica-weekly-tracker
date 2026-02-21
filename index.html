@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Jessica's Client Tracker</title>
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,400&display=swap');
 
@@ -467,20 +466,8 @@
 <!-- Config Modal -->
 <div class="overlay" id="overlay">
   <div class="modal">
-    <h2>⚙ EmailJS Setup</h2>
-    <p class="sub">Configure once — all automated reminders and status emails will use these settings.</p>
-
-    <label>EmailJS Public Key</label>
-    <input id="cfg_pub" placeholder="e.g. aBcDeFgHiJ..." />
-
-    <label>EmailJS Service ID</label>
-    <input id="cfg_svc" placeholder="service_xxxxxxx" />
-
-    <label>Reminder Template ID <span style="color:var(--muted);font-size:0.7rem;">(→ Jessica)</span></label>
-    <input id="cfg_t1" placeholder="template_xxxxxxx" />
-
-    <label>Status Report Template ID <span style="color:var(--muted);font-size:0.7rem;">(→ Admin)</span></label>
-    <input id="cfg_t2" placeholder="template_xxxxxxx" />
+    <h2>⚙ Email Setup</h2>
+    <p class="sub">Set recipient emails. SMTP credentials are read from server-side <code>secrets.json</code>.</p>
 
     <label>Jessica's Gmail</label>
     <input id="cfg_jess" type="email" placeholder="jessica@gmail.com" />
@@ -489,12 +476,10 @@
     <input id="cfg_admin" type="email" placeholder="you@gmail.com" />
 
     <div class="note-box">
-      <strong>Templates need 3 variables:</strong><br>
-      <code>{{to_email}}</code> &nbsp;·&nbsp; <code>{{subject}}</code> &nbsp;·&nbsp; <code>{{message}}</code><br><br>
-      <strong>Automated reminders fire automatically:</strong><br>
-      • Mondays 8am → Discussion Post reminders<br>
-      • Fridays 8am → Assignment/Quiz/Response reminders<br>
-      Both run via cron-job.org hitting <code>/reminder.html</code>
+      <strong>All email sending now runs server-side:</strong><br>
+      • <code>send-email.php</code> for manual sends from this page<br>
+      • <code>reminder-cron.php</code> for automated reminders<br><br>
+      Configure SMTP once in <code>secrets.json</code>.
     </div>
 
     <div class="modal-btns">
@@ -541,6 +526,7 @@ const STATUSES = [
 let currentWeek   = 1;
 let currentClient = 'Carletta';
 let data          = {}; // data[client][week]['CourseName__taskKey'] = {status, notes}
+const DATA_ENDPOINT = 'tracker-data.php';
 
 // ═══════════════════════════════════════════════════════════════
 //  DATES
@@ -574,11 +560,30 @@ function get(client, week, key) {
   return data[client][week][key];
 }
 
-function loadData() {
+async function loadData() {
+  try {
+    const res = await fetch(DATA_ENDPOINT, { method: 'GET', cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const payload = await res.json();
+    data = payload && typeof payload.data === 'object' && payload.data ? payload.data : {};
+    localStorage.setItem('jt_data', JSON.stringify(data));
+    return;
+  } catch(e) {
+    // Fallback to local cache if server read fails.
+  }
   try { data = JSON.parse(localStorage.getItem('jt_data') || '{}'); } catch(e) { data = {}; }
 }
-function saveData() {
+async function saveData() {
   try { localStorage.setItem('jt_data', JSON.stringify(data)); } catch(e) {}
+  try {
+    await fetch(DATA_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data })
+    });
+  } catch(e) {
+    // Keep local save even if server write fails.
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -590,24 +595,15 @@ function cfg() {
 }
 function saveConfig() {
   const c = {
-    pub:   document.getElementById('cfg_pub').value.trim(),
-    svc:   document.getElementById('cfg_svc').value.trim(),
-    t1:    document.getElementById('cfg_t1').value.trim(),
-    t2:    document.getElementById('cfg_t2').value.trim(),
     jess:  document.getElementById('cfg_jess').value.trim(),
     admin: document.getElementById('cfg_admin').value.trim()
   };
   localStorage.setItem('jt_cfg', JSON.stringify(c));
-  if (c.pub) emailjs.init(c.pub);
   closeModal();
   toast('✅ Configuration saved!');
 }
 function openModal() {
   const c = cfg();
-  document.getElementById('cfg_pub').value   = c.pub   || '';
-  document.getElementById('cfg_svc').value   = c.svc   || '';
-  document.getElementById('cfg_t1').value    = c.t1    || '';
-  document.getElementById('cfg_t2').value    = c.t2    || '';
   document.getElementById('cfg_jess').value  = c.jess  || '';
   document.getElementById('cfg_admin').value = c.admin || '';
   document.getElementById('overlay').classList.add('open');
@@ -768,8 +764,8 @@ function setNotes(client, week, key, value) {
   get(client, week, key).notes = value;
 }
 
-function saveAll() {
-  saveData();
+async function saveAll() {
+  await saveData();
   toast('✅ Progress saved!');
 }
 
@@ -777,14 +773,27 @@ function saveAll() {
 //  EMAIL HELPERS
 // ═══════════════════════════════════════════════════════════════
 
-function sendEmail(templateId, toEmail, subject, message) {
-  const c = cfg();
-  if (!c.pub || !c.svc || !templateId) {
-    toast('⚠️ Configure EmailJS first — click ⚙ Setup', true);
-    return Promise.reject('not configured');
+async function sendEmail(_templateId, toEmail, subject, message) {
+  if (!toEmail || !subject || !message) {
+    toast('⚠️ Missing email fields in setup.', true);
+    throw new Error('missing_fields');
   }
-  emailjs.init(c.pub);
-  return emailjs.send(c.svc, templateId, { to_email: toEmail, subject, message });
+
+  const res = await fetch('send-email.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      to_email: toEmail,
+      subject,
+      message
+    })
+  });
+
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || !payload.ok) {
+    throw new Error(payload.error || `HTTP ${res.status}`);
+  }
+  return payload;
 }
 
 function buildStatusReport() {
@@ -853,22 +862,22 @@ function emailStatusToAdmin() {
   const c = cfg();
   const w = currentWeek;
   const d = weekDates(w);
-  sendEmail(c.t2, c.admin,
+  sendEmail('', c.admin,
     `Week ${w} Status Report — Jessica's Clients`,
     buildStatusReport()
   ).then(() => toast('✅ Status report sent to admin!'))
-   .catch(() => toast('❌ Email failed — check Setup config', true));
+   .catch(() => toast('❌ Email failed — check server SMTP secrets.json', true));
 }
 
 function sendManualReminder() {
   const c   = cfg();
   const dow = new Date().getDay();
   const day = dow === 1 ? 'monday' : 'friday';
-  sendEmail(c.t1, c.jess,
+  sendEmail('', c.jess,
     `Week ${autoDetectWeek()} Reminder — Tasks Due`,
     buildReminderMsg(day)
   ).then(() => toast('✅ Reminder sent to Jessica!'))
-   .catch(() => toast('❌ Email failed — check Setup config', true));
+   .catch(() => toast('❌ Email failed — check server SMTP secrets.json', true));
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -887,11 +896,13 @@ function toast(msg, isErr=false) {
 //  INIT
 // ═══════════════════════════════════════════════════════════════
 
-loadData();
-const _cfg = cfg();
-if (_cfg.pub) emailjs.init(_cfg.pub);
-currentWeek = autoDetectWeek();
-render();
+async function initApp() {
+  await loadData();
+  currentWeek = autoDetectWeek();
+  render();
+}
+
+initApp();
 </script>
 </body>
 </html>

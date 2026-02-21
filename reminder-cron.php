@@ -3,23 +3,15 @@ declare(strict_types=1);
 
 header('Content-Type: application/json; charset=utf-8');
 
-// Server-side cron endpoint for cron-job.org (curl/wget style requests).
-// Example:
-//   /reminder-cron.php?secret=CHANGE_ME&day=monday
-//   /reminder-cron.php?secret=CHANGE_ME&day=friday
+require_once __DIR__ . '/mailer.php';
 
-$CONFIG = [
-    'smtpHost'   => 'smtp.gmail.com',
-    'smtpPort'   => 587, // 587 (STARTTLS) or 465 (implicit TLS)
-    'smtpSecure' => 'tls', // tls or ssl
-    'smtpUser'   => '0x1ab983639@gmail.com',
-    'smtpPass'   => '',
-    'fromEmail'  => '0x1ab983639@gmail.com',
-    'fromName'   => 'Jessica Tracker',
-    'jessEmail'  => 'denisgitau12@gmail.com',
-    'adminEmail' => '0x1ab983639@gmail.com',
-    'cronSecret' => '',
-];
+try {
+    $SECRETS = loadSecrets(__DIR__ . '/secrets.json');
+} catch (Throwable $e) {
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    exit;
+}
 
 $SCHEDULE = [
     ['week' => 1, 'wedDate' => 'Feb 25', 'sunDate' => 'Mar 1'],
@@ -38,16 +30,36 @@ $CLIENTS = [
     'Palmer'   => ['Course 1', 'Course 2'],
 ];
 
-if ($CONFIG['cronSecret'] === 'test_cron_secret') {
-    http_response_code(500);
-    echo json_encode(['ok' => false, 'error' => 'cronSecret not configured']);
-    exit;
+$TASK_TYPES = [
+    ['key' => 'disc_post', 'label' => 'Discussion Post', 'icon' => '💬'],
+    ['key' => 'disc_response', 'label' => 'Discussion Response', 'icon' => '↩️'],
+    ['key' => 'assignment', 'label' => 'Assignment', 'icon' => '📝'],
+    ['key' => 'quiz', 'label' => 'Quiz', 'icon' => '📋'],
+];
+
+$STATUS_LABELS = [
+    'not_started' => '○ Not Started',
+    'in_progress' => '◑ In Progress',
+    'completed'   => '✓ Completed',
+    'missed'      => '✕ Missed',
+    'na'          => '— N/A',
+];
+
+$cronSecret = trim((string) ($SECRETS['cronSecret'] ?? ''));
+if ($cronSecret !== '') {
+    $secret = (string) ($_GET['secret'] ?? '');
+    if (!hash_equals($cronSecret, $secret)) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'unauthorized']);
+        exit;
+    }
 }
 
-$secret = $_GET['secret'] ?? '';
-if (!hash_equals($CONFIG['cronSecret'], (string) $secret)) {
-    http_response_code(403);
-    echo json_encode(['ok' => false, 'error' => 'unauthorized']);
+$jessEmail = trim((string) ($SECRETS['defaultJessicaEmail'] ?? ''));
+$adminEmail = trim((string) ($SECRETS['defaultAdminEmail'] ?? ''));
+if ($jessEmail === '') {
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => 'missing defaultJessicaEmail in secrets.json']);
     exit;
 }
 
@@ -77,34 +89,29 @@ if ($day === '') {
 
 $week = getWeekNum();
 $sched = getSchedule($SCHEDULE, $week);
-$mail = buildReminderEmail($CLIENTS, $week, $sched, $day);
+$allData = loadTrackerData();
+$mail = buildReminderEmail($CLIENTS, $TASK_TYPES, $STATUS_LABELS, $allData, $week, $sched, $day);
 
-$first = sendEmailSmtp(
-    $CONFIG,
-    $CONFIG['jessEmail'],
-    $mail['subject'],
-    $mail['body']
-);
-
+$first = sendEmailSmtp($SECRETS, $jessEmail, $mail['subject'], $mail['body']);
 if (!$first['ok']) {
     http_response_code(502);
     echo json_encode([
         'ok' => false,
         'error' => 'failed sending reminder',
-        'details' => $first['error'],
+        'details' => $first['error'] ?? 'send_failed',
     ]);
     exit;
 }
 
 $adminSent = false;
-if ($CONFIG['adminEmail'] !== '' && $CONFIG['adminEmail'] !== $CONFIG['jessEmail']) {
+if ($adminEmail !== '' && $adminEmail !== $jessEmail) {
     $admin = sendEmailSmtp(
-        $CONFIG,
-        $CONFIG['adminEmail'],
+        $SECRETS,
+        $adminEmail,
         '[COPY] ' . $mail['subject'],
         "Admin copy of reminder sent to Jessica.\n\n" . $mail['body']
     );
-    $adminSent = $admin['ok'];
+    $adminSent = (bool) ($admin['ok'] ?? false);
 }
 
 echo json_encode([
@@ -141,8 +148,15 @@ function getSchedule(array $schedule, int $week): array
     return $schedule[0];
 }
 
-function buildReminderEmail(array $clients, int $week, array $sched, string $day): array
-{
+function buildReminderEmail(
+    array $clients,
+    array $taskTypes,
+    array $statusLabels,
+    array $allData,
+    int $week,
+    array $sched,
+    string $day
+): array {
     $isMonday = $day === 'monday';
     $subject = $isMonday
         ? "📌 Week {$week} — Discussion Posts due Wednesday {$sched['wedDate']}"
@@ -158,18 +172,16 @@ function buildReminderEmail(array $clients, int $week, array $sched, string $day
     foreach ($clients as $client => $courses) {
         $body .= "━━ " . strtoupper($client) . " ━━\n";
         foreach ($courses as $course) {
-            if ($isMonday) {
-                $body .= "↩️ {$client} {$course} — Discussion Post\n";
-                $body .= "Status: ○ Not Started ⚠️ NEEDS ATTENTION\n";
-                $hasWarnings = true;
-            } else {
-                $body .= "↩️ {$client} {$course} — Discussion Response\n";
-                $body .= "Status: ○ Not Started ⚠️ NEEDS ATTENTION\n";
-                $body .= "📝 {$client} {$course} — Assignment\n";
-                $body .= "Status: ○ Not Started ⚠️ NEEDS ATTENTION\n";
-                $body .= "📋 {$client} {$course} — Quiz\n";
-                $body .= "Status: ○ Not Started ⚠️ NEEDS ATTENTION\n";
-                $hasWarnings = true;
+            foreach ($taskTypes as $task) {
+                $status = getStoredStatus($allData, $client, $week, $course, (string) $task['key']);
+                $label = $statusLabels[$status] ?? $status;
+                $warn = $status === 'not_started' || $status === 'missed';
+                if ($warn) {
+                    $hasWarnings = true;
+                }
+
+                $body .= "{$task['icon']} {$client} {$course} — {$task['label']}\n";
+                $body .= "Status: {$label}" . ($warn ? " ⚠️ NEEDS ATTENTION" : "") . "\n";
             }
         }
         $body .= "\n";
@@ -183,168 +195,50 @@ function buildReminderEmail(array $clients, int $week, array $sched, string $day
     return ['subject' => $subject, 'body' => $body];
 }
 
-function sendEmailSmtp(array $config, string $toEmail, string $subject, string $message): array
+function loadTrackerData(): array
 {
-    $required = ['smtpHost', 'smtpPort', 'smtpSecure', 'smtpUser', 'smtpPass', 'fromEmail'];
-    foreach ($required as $key) {
-        if (!isset($config[$key]) || trim((string) $config[$key]) === '') {
-            return ['ok' => false, 'error' => "missing smtp config: {$key}"];
+    $files = [
+        __DIR__ . '/data/tracker-data.json',
+        '/tmp/jessica-tracker-data.json',
+        __DIR__ . '/tracker-data.json',
+    ];
+
+    foreach ($files as $file) {
+        if (!is_file($file)) {
+            continue;
+        }
+
+        $raw = @file_get_contents($file);
+        if ($raw === false || trim($raw) === '') {
+            continue;
+        }
+
+        $decoded = json_decode($raw, true);
+        if (is_array($decoded)) {
+            return $decoded;
         }
     }
 
-    $port = (int) $config['smtpPort'];
-    $secure = strtolower(trim((string) $config['smtpSecure']));
-    $host = trim((string) $config['smtpHost']);
-    $user = trim((string) $config['smtpUser']);
-    $pass = (string) $config['smtpPass'];
-    $fromEmail = trim((string) $config['fromEmail']);
-    $fromName = trim((string) ($config['fromName'] ?? 'Jessica Tracker'));
-
-    $transport = $secure === 'ssl' ? "ssl://{$host}:{$port}" : "tcp://{$host}:{$port}";
-    $socket = @stream_socket_client($transport, $errno, $errstr, 20, STREAM_CLIENT_CONNECT);
-    if (!$socket) {
-        return ['ok' => false, 'error' => "smtp connect failed: {$errstr} ({$errno})"];
-    }
-
-    stream_set_timeout($socket, 20);
-    $read = smtpRead($socket);
-    if (!smtpOk($read, [220])) {
-        fclose($socket);
-        return ['ok' => false, 'error' => "smtp greeting failed: {$read}"];
-    }
-
-    $hostname = gethostname() ?: 'localhost';
-    if (!smtpCmd($socket, "EHLO {$hostname}", [250], $reply)) {
-        fclose($socket);
-        return ['ok' => false, 'error' => "ehlo failed: {$reply}"];
-    }
-
-    if ($secure === 'tls') {
-        if (!smtpCmd($socket, 'STARTTLS', [220], $reply)) {
-            fclose($socket);
-            return ['ok' => false, 'error' => "starttls failed: {$reply}"];
-        }
-        if (!stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
-            fclose($socket);
-            return ['ok' => false, 'error' => 'failed enabling tls'];
-        }
-        if (!smtpCmd($socket, "EHLO {$hostname}", [250], $reply)) {
-            fclose($socket);
-            return ['ok' => false, 'error' => "ehlo after tls failed: {$reply}"];
-        }
-    }
-
-    if (!smtpCmd($socket, 'AUTH LOGIN', [334], $reply)) {
-        fclose($socket);
-        return ['ok' => false, 'error' => "auth login failed: {$reply}"];
-    }
-    if (!smtpCmd($socket, base64_encode($user), [334], $reply)) {
-        fclose($socket);
-        return ['ok' => false, 'error' => "smtp user rejected: {$reply}"];
-    }
-    if (!smtpCmd($socket, base64_encode($pass), [235], $reply)) {
-        fclose($socket);
-        return ['ok' => false, 'error' => "smtp password rejected: {$reply}"];
-    }
-
-    if (!smtpCmd($socket, "MAIL FROM:<{$fromEmail}>", [250], $reply)) {
-        fclose($socket);
-        return ['ok' => false, 'error' => "mail from failed: {$reply}"];
-    }
-    if (!smtpCmd($socket, "RCPT TO:<{$toEmail}>", [250, 251], $reply)) {
-        fclose($socket);
-        return ['ok' => false, 'error' => "rcpt failed: {$reply}"];
-    }
-    if (!smtpCmd($socket, 'DATA', [354], $reply)) {
-        fclose($socket);
-        return ['ok' => false, 'error' => "data failed: {$reply}"];
-    }
-
-    $headers = [];
-    $headers[] = 'From: ' . formatAddress($fromName, $fromEmail);
-    $headers[] = 'To: ' . formatAddress('', $toEmail);
-    $headers[] = 'Subject: ' . encodeHeader($subject);
-    $headers[] = 'MIME-Version: 1.0';
-    $headers[] = 'Content-Type: text/plain; charset=UTF-8';
-    $headers[] = 'Content-Transfer-Encoding: 8bit';
-    $headers[] = 'Date: ' . date(DATE_RFC2822);
-
-    $body = preg_replace("/\r\n|\r|\n/", "\r\n", $message) ?? $message;
-    $data = implode("\r\n", $headers) . "\r\n\r\n" . dotStuff($body) . "\r\n.";
-
-    fwrite($socket, $data . "\r\n");
-    $reply = smtpRead($socket);
-    if (!smtpOk($reply, [250])) {
-        fclose($socket);
-        return ['ok' => false, 'error' => "message rejected: {$reply}"];
-    }
-
-    smtpCmd($socket, 'QUIT', [221], $reply);
-    fclose($socket);
-    return ['ok' => true];
+    return [];
 }
 
-function smtpCmd($socket, string $command, array $okCodes, ?string &$reply = null): bool
+function getStoredStatus(array $allData, string $client, int $week, string $course, string $typeKey): string
 {
-    fwrite($socket, $command . "\r\n");
-    $reply = smtpRead($socket);
-    return smtpOk($reply, $okCodes);
-}
-
-function smtpRead($socket): string
-{
-    $data = '';
-    while (!feof($socket)) {
-        $line = fgets($socket, 2048);
-        if ($line === false) {
-            break;
-        }
-        $data .= $line;
-        if (preg_match('/^\d{3}\s/', $line)) {
-            break;
-        }
-    }
-    return trim($data);
-}
-
-function smtpOk(string $reply, array $okCodes): bool
-{
-    if (!preg_match('/^(\d{3})/', $reply, $m)) {
-        return false;
-    }
-    return in_array((int) $m[1], $okCodes, true);
-}
-
-function formatAddress(string $name, string $email): string
-{
-    $email = trim($email);
-    if ($name === '') {
-        return "<{$email}>";
-    }
-    return encodeHeader($name) . " <{$email}>";
-}
-
-function encodeHeader(string $value): string
-{
-    if (preg_match('/[^\x20-\x7E]/', $value)) {
-        return '=?UTF-8?B?' . base64_encode($value) . '?=';
+    $rowKey = "{$course}__{$typeKey}";
+    $value = $allData[$client][(string) $week][$rowKey]['status'] ?? null;
+    if (!is_string($value) || $value === '') {
+        return 'not_started';
     }
     return $value;
 }
 
-function dotStuff(string $text): string
-{
-    return preg_replace('/(?m)^\./', '..', $text) ?? $text;
-}
-
 function extractDayParam(): string
 {
-    // Direct query/form keys first.
     $candidates = [
         $_GET['day'] ?? null,
         $_GET['Day'] ?? null,
         $_GET['DAY'] ?? null,
-        $_GET['amp;day'] ?? null, // Handles badly escaped URLs that contain &amp;day=...
+        $_GET['amp;day'] ?? null,
         $_REQUEST['day'] ?? null,
         $_POST['day'] ?? null,
     ];
@@ -355,7 +249,6 @@ function extractDayParam(): string
         }
     }
 
-    // Fallback: parse raw query string defensively.
     $query = (string) ($_SERVER['QUERY_STRING'] ?? '');
     if ($query !== '') {
         $parsed = [];
@@ -367,7 +260,6 @@ function extractDayParam(): string
         }
     }
 
-    // Path fallback: /reminder-cron.php/monday or /reminder-cron.php/friday
     $pathInfo = (string) ($_SERVER['PATH_INFO'] ?? '');
     if ($pathInfo !== '') {
         $parts = array_values(array_filter(explode('/', trim($pathInfo, '/'))));
@@ -376,7 +268,6 @@ function extractDayParam(): string
         }
     }
 
-    // REQUEST_URI fallback when PATH_INFO is unavailable.
     $uriPath = (string) parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
     if ($uriPath !== '') {
         $segments = array_values(array_filter(explode('/', trim($uriPath, '/'))));

@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Auto Reminder Trigger</title>
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reminder Bridge</title>
 <style>
   body {
     background: #0c0c10;
@@ -13,248 +13,78 @@
     align-items: center;
     justify-content: center;
     min-height: 100vh;
-    flex-direction: column;
-    gap: 14px;
+    margin: 0;
     padding: 20px;
   }
-  #status { font-size: 1.3rem; }
-  #log {
-    font-size: 0.82rem;
-    color: #6b6b80;
-    max-width: 520px;
-    width: 100%;
-    line-height: 2;
+  .wrap {
+    width: min(760px, 100%);
     background: #16161e;
     border: 1px solid #2a2a38;
     border-radius: 10px;
     padding: 16px 20px;
   }
+  #status { font-size: 1.05rem; margin-bottom: 10px; }
+  #log { line-height: 1.7; color: #9ca3af; white-space: pre-wrap; word-break: break-word; }
   .ok  { color: #4ade80; }
   .err { color: #e05c5c; }
-  .dim { color: #6b6b80; }
-  .spin { animation: spin 1s linear infinite; display: inline-block; }
-  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
-
-<div id="status"><span class="spin">⟳</span>&nbsp; Running...</div>
-<div id="log"></div>
+  <div class="wrap">
+    <div id="status">⟳ Running...</div>
+    <div id="log"></div>
+  </div>
 
 <script>
-// ═══════════════════════════════════════════════════════════════
-//  !!  EDIT THIS CONFIG SECTION BEFORE UPLOADING  !!
-// ═══════════════════════════════════════════════════════════════
+const ENDPOINT = 'reminder-cron.php';
 
-const CONFIG = {
-  publicKey:  "YOUR_EMAILJS_PUBLIC_KEY",        // Account → API Keys on emailjs.com
-  serviceId:  "YOUR_EMAILJS_SERVICE_ID",         // Email Services on emailjs.com
-  templateId: "YOUR_EMAILJS_REMINDER_TEMPLATE",  // The reminder template ID
-  adminTempl: "YOUR_EMAILJS_STATUS_TEMPLATE",    // The status/admin template ID
-  jessEmail:  "jessica@gmail.com",               // ← Jessica's Gmail
-  adminEmail: "you@gmail.com"                    // ← Your Gmail (gets admin copy)
-};
-
-// ═══════════════════════════════════════════════════════════════
-//  HARDCODED SCHEDULE — ALL 8 WEEKS
-//  Week 1 starts Monday February 23, 2026
-// ═══════════════════════════════════════════════════════════════
-
-const SCHEDULE = [
-  { week:1, monDate:'Feb 23', wedDate:'Feb 25', friDate:'Feb 27', sunDate:'Mar 1'  },
-  { week:2, monDate:'Mar 2',  wedDate:'Mar 4',  friDate:'Mar 6',  sunDate:'Mar 8'  },
-  { week:3, monDate:'Mar 9',  wedDate:'Mar 11', friDate:'Mar 13', sunDate:'Mar 15' },
-  { week:4, monDate:'Mar 16', wedDate:'Mar 18', friDate:'Mar 20', sunDate:'Mar 22' },
-  { week:5, monDate:'Mar 23', wedDate:'Mar 25', friDate:'Mar 27', sunDate:'Mar 29' },
-  { week:6, monDate:'Mar 30', wedDate:'Apr 1',  friDate:'Apr 3',  sunDate:'Apr 5'  },
-  { week:7, monDate:'Apr 6',  wedDate:'Apr 8',  friDate:'Apr 10', sunDate:'Apr 12' },
-  { week:8, monDate:'Apr 13', wedDate:'Apr 15', friDate:'Apr 17', sunDate:'Apr 19' }
-];
-
-// ═══════════════════════════════════════════════════════════════
-//  CLIENTS
-// ═══════════════════════════════════════════════════════════════
-
-const CLIENTS = {
-  Carletta: ['Course 1', 'Course 2'],
-  Ahmed:    ['Course 1'],
-  Palmer:   ['Course 1', 'Course 2']
-};
-
-const TASK_TYPES = [
-  { key:'disc_post',     label:'Discussion Post',     icon:'💬', due:'Wednesday' },
-  { key:'disc_response', label:'Discussion Response', icon:'↩️', due:'Sunday'    },
-  { key:'assignment',    label:'Assignment',           icon:'📝', due:'Sunday'    },
-  { key:'quiz',          label:'Quiz',                 icon:'📋', due:'Sunday'    }
-];
-
-const STATUS_LABELS = {
-  not_started: '○ Not Started',
-  in_progress: '◑ In Progress',
-  completed:   '✓ Completed',
-  missed:      '✕ Missed',
-  na:          '— N/A'
-};
-
-// ═══════════════════════════════════════════════════════════════
-//  HELPERS
-// ═══════════════════════════════════════════════════════════════
-
-function log(msg, cls='') {
-  document.getElementById('log').innerHTML += `<span class="${cls}">${msg}</span><br>`;
+function detectDay() {
+  const d = new Date().getDay();
+  if (d === 1) return 'monday';
+  if (d === 5) return 'friday';
+  return '';
 }
 
-function getWeekNum() {
-  const start = new Date('2026-02-23T00:00:00');
-  const now   = new Date();
-  const diff  = Math.floor((now - start) / (7*24*3600*1000));
-  return Math.max(1, Math.min(8, diff + 1));
+function log(msg) {
+  const el = document.getElementById('log');
+  el.textContent += msg + '\n';
 }
-
-function getSchedule(week) {
-  return SCHEDULE.find(s => s.week === week) || SCHEDULE[0];
-}
-
-function getStoredData() {
-  try { return JSON.parse(localStorage.getItem('jt_data') || '{}'); } catch(e) { return {}; }
-}
-
-function getStatus(allData, client, week, course, typeKey) {
-  return allData?.[client]?.[week]?.[`${course}__${typeKey}`]?.status || 'not_started';
-}
-
-// ═══════════════════════════════════════════════════════════════
-//  BUILD EMAIL CONTENT
-// ═══════════════════════════════════════════════════════════════
-
-function buildReminderEmail(day) {
-  const week = getWeekNum();
-  const sched = getSchedule(week);
-  const allData = getStoredData();
-  const isMonday = day === 'monday';
-
-  const subject = isMonday
-    ? `📌 Week ${week} — Discussion Posts due Wednesday ${sched.wedDate}`
-    : `📌 Week ${week} — Assignments, Quizzes & Responses due Sunday ${sched.sunDate}`;
-
-  let body = `Hi Jessica!\n\n`;
-  body += `Week ${week} of 8 — `;
-  body += isMonday
-    ? `Discussion Posts are due Wednesday, ${sched.wedDate}.\n\n`
-    : `Assignments, Quizzes & Discussion Responses are due Sunday, ${sched.sunDate}.\n\n`;
-
-  let hasWarnings = false;
-
-  for (const [client, courses] of Object.entries(CLIENTS)) {
-    body += `━━ ${client.toUpperCase()} ━━\n`;
-
-    const relevantTypes = isMonday
-      ? [TASK_TYPES[0]]
-      : TASK_TYPES.slice(1);
-
-    for (const course of courses) {
-      for (const t of relevantTypes) {
-        const status = getStatus(allData, client, week, course, t.key);
-        const label  = STATUS_LABELS[status] || status;
-        const warn   = (status === 'not_started' || status === 'missed');
-        if (warn) hasWarnings = true;
-        body += `  ${t.icon} ${client} ${course} — ${t.label}\n`;
-        body += `     Status: ${label}${warn ? ' ⚠️ NEEDS ATTENTION' : ''}\n`;
-      }
-    }
-    body += '\n';
-  }
-
-  body += hasWarnings
-    ? `⚠️  Some items still need attention — please update your tracker!\n\n`
-    : `✅  Great job — everything is on track!\n\n`;
-
-  body += `Open your tracker: ${window.location.origin.replace('/reminder.html','')}\n`;
-  body += `\nWeek ${week} of 8 — You've got this! 💪`;
-
-  return { subject, body };
-}
-
-// ═══════════════════════════════════════════════════════════════
-//  SEND EMAIL
-// ═══════════════════════════════════════════════════════════════
-
-async function sendEmail(templateId, toEmail, subject, message) {
-  return emailjs.send(CONFIG.serviceId, templateId, {
-    to_email: toEmail,
-    subject:  subject,
-    message:  message
-  });
-}
-
-// ═══════════════════════════════════════════════════════════════
-//  MAIN
-// ═══════════════════════════════════════════════════════════════
 
 async function run() {
-  // Check if not configured yet
-  if (CONFIG.publicKey === 'YOUR_EMAILJS_PUBLIC_KEY') {
-    document.getElementById('status').innerHTML = '⚙️ Not configured';
-    log('reminder.html is not configured yet.', 'err');
-    log('Open this file and edit the CONFIG block at the top.', 'dim');
+  const statusEl = document.getElementById('status');
+  const here = new URL(window.location.href);
+  const day = (here.searchParams.get('day') || detectDay()).toLowerCase();
+
+  if (day !== 'monday' && day !== 'friday') {
+    statusEl.textContent = 'ℹ️ Not a reminder day';
+    log('Use ?day=monday or ?day=friday');
     return;
   }
 
-  emailjs.init(CONFIG.publicKey);
+  const target = new URL(ENDPOINT, here);
+  target.searchParams.set('day', day);
 
-  // Get day from URL param — cron-job.org passes ?day=monday or ?day=friday
-  const params = new URLSearchParams(window.location.search);
-  let day = params.get('day');
+  log(`Calling: ${target.pathname}?day=${day}`);
 
-  // Fallback: detect from actual day of week
-  if (!day) {
-    const dow = new Date().getDay();
-    if      (dow === 1) day = 'monday';
-    else if (dow === 5) day = 'friday';
-    else {
-      document.getElementById('status').textContent = 'ℹ️ No reminder today';
-      log('Reminders only go out on Mondays and Fridays.', 'dim');
-      log('Test with: ?day=monday or ?day=friday', 'dim');
-      return;
-    }
-  }
-
-  const week  = getWeekNum();
-  const sched = getSchedule(week);
-  log(`Week ${week} of 8 | ${day.toUpperCase()} trigger`);
-  log(`Schedule: Wed ${sched.wedDate} / Sun ${sched.sunDate}`);
-
-  // Build email
-  const { subject, body } = buildReminderEmail(day);
-  log(`Subject: ${subject}`, 'dim');
-
-  // Send to Jessica
-  log(`Sending to Jessica (${CONFIG.jessEmail})...`);
   try {
-    await sendEmail(CONFIG.templateId, CONFIG.jessEmail, subject, body);
-    log(`✓ Reminder sent to Jessica`, 'ok');
-  } catch(e) {
-    log(`✗ Failed to send to Jessica: ${e?.text || JSON.stringify(e)}`, 'err');
-    document.getElementById('status').innerHTML = '<span class="err">❌ Send failed — check log</span>';
-    return;
-  }
+    const res = await fetch(target.toString(), { method: 'GET', cache: 'no-store' });
+    const text = await res.text();
+    let out = {};
+    try { out = JSON.parse(text); } catch (_) { out = { raw: text }; }
 
-  // Send admin copy
-  if (CONFIG.adminEmail && CONFIG.adminEmail !== CONFIG.jessEmail) {
-    log(`Sending admin copy to (${CONFIG.adminEmail})...`);
-    try {
-      await sendEmail(CONFIG.adminTempl, CONFIG.adminEmail,
-        `[COPY] ${subject}`,
-        `Admin copy of reminder sent to Jessica.\n\n${body}`
-      );
-      log(`✓ Admin copy sent`, 'ok');
-    } catch(e) {
-      log(`⚠ Admin copy failed (non-critical): ${e?.text || ''}`, 'err');
+    if (res.ok && out.ok) {
+      statusEl.className = 'ok';
+      statusEl.textContent = '✅ Reminder sent';
+    } else {
+      statusEl.className = 'err';
+      statusEl.textContent = `❌ Failed (${res.status})`;
     }
+    log(JSON.stringify(out, null, 2));
+  } catch (e) {
+    statusEl.className = 'err';
+    statusEl.textContent = '❌ Request failed';
+    log(String(e));
   }
-
-  document.getElementById('status').innerHTML = '<span class="ok">✅ Done — emails sent</span>';
-  log(`Completed at: ${new Date().toLocaleString()}`, 'dim');
 }
 
 window.addEventListener('load', run);
