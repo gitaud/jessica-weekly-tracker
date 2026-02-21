@@ -18,7 +18,7 @@ $CONFIG = [
     'fromName'   => 'Jessica Tracker',
     'jessEmail'  => 'denisgitau12@gmail.com',
     'adminEmail' => '0x1ab983639@gmail.com',
-    'cronSecret' => '1d35fase5146gw45134daA',
+    'cronSecret' => '',
 ];
 
 $SCHEDULE = [
