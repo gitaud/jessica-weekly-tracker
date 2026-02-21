@@ -824,37 +824,37 @@ function buildStatusReport() {
 function buildReminderMsg(day) {
   const w = autoDetectWeek();
   const d = weekDates(w);
-  let msg = `Hi Jessica!\n\nWeek ${w} of 8 reminder:\n\n`;
-  if (day === 'monday') {
-    msg += `📌 DISCUSSION POSTS due Wednesday ${d.wedStr}:\n\n`;
-    for (const [client, {courses}] of Object.entries(CLIENTS)) {
-      msg += `${client}:\n`;
-      for (const course of courses) {
-        const k  = `${course}__disc_post`;
+  const isMonday = day === 'monday';
+  let msg = `Hi Jessica!\n\n`;
+  msg += `Week ${w} of 8 — `;
+  msg += isMonday
+    ? `Discussion Posts are due Wednesday, ${d.wedStr}.\n\n`
+    : `Assignments, Quizzes & Discussion Responses are due Sunday, ${d.sunStr}.\n\n`;
+
+  let hasWarnings = false;
+  const labelMap = {};
+  for (const s of STATUSES) labelMap[s.v] = (s.l || s.v).replace(/\s+/g, ' ').trim();
+
+  for (const [client, {courses}] of Object.entries(CLIENTS)) {
+    msg += `━━ ${client.toUpperCase()} ━━\n`;
+    for (const course of courses) {
+      for (const t of TASK_TYPES) {
+        const k = `${course}__${t.key}`;
         const td = data[client]?.[w]?.[k] || { status:'not_started' };
-        const sl = STATUSES.find(s=>s.v===td.status)?.l || td.status;
-        const flag = (td.status==='not_started'||td.status==='missed') ? ' ⚠️' : '';
-        msg += `  • ${course}: ${sl}${flag}\n`;
+        const sl = labelMap[td.status] || td.status || 'not_started';
+        const warn = (td.status === 'not_started' || td.status === 'missed');
+        if (warn) hasWarnings = true;
+        msg += `${t.icon} ${client} ${course} — ${t.label}\n`;
+        msg += `Status: ${sl}${warn ? ' ⚠️ NEEDS ATTENTION' : ''}\n`;
       }
-      msg += '\n';
     }
-  } else {
-    msg += `📌 Due Sunday ${d.sunStr}:\n\n`;
-    for (const [client, {courses}] of Object.entries(CLIENTS)) {
-      msg += `${client}:\n`;
-      for (const course of courses) {
-        for (const t of TASK_TYPES.slice(1)) {
-          const k  = `${course}__${t.key}`;
-          const td = data[client]?.[w]?.[k] || { status:'not_started' };
-          const sl = STATUSES.find(s=>s.v===td.status)?.l || td.status;
-          const flag = (td.status==='not_started'||td.status==='missed') ? ' ⚠️' : '';
-          msg += `  • ${course} — ${t.label}: ${sl}${flag}\n`;
-        }
-      }
-      msg += '\n';
-    }
+    msg += '\n';
   }
-  msg += `Track it: ${window.location.origin}\n\nYou've got this! 💪`;
+
+  msg += hasWarnings
+    ? `⚠️ Some items still need attention — please update your tracker!\n\n`
+    : `✅ Great job — everything is on track!\n\n`;
+  msg += `Week ${w} of 8 — You've got this! 💪`;
   return msg;
 }
 
@@ -864,7 +864,7 @@ function emailStatusToAdmin() {
   const w = currentWeek;
   const d = weekDates(w);
   sendEmail('', c.admin,
-    `Week ${w} Status Report — Jessica's Clients`,
+    `📌 Week ${w} Status Report — Jessica's Clients`,
     buildStatusReport(),
     'admin'
   ).then(() => toast('✅ Status report sent to admin!'))
@@ -875,8 +875,14 @@ function sendManualReminder() {
   const c   = cfg();
   const dow = new Date().getDay();
   const day = dow === 1 ? 'monday' : 'friday';
+  const week = autoDetectWeek();
+  const dates = weekDates(week);
+  const due = day === 'monday' ? dates.wedStr : dates.sunStr;
+  const subject = day === 'monday'
+    ? `📌 Week ${week} — Discussion Posts due Wednesday ${due}`
+    : `📌 Week ${week} — Assignments, Quizzes & Responses due Sunday ${due}`;
   sendEmail('', c.jess,
-    `Week ${autoDetectWeek()} Reminder — Tasks Due`,
+    subject,
     buildReminderMsg(day),
     'jess'
   ).then(() => toast('✅ Reminder sent to Jessica!'))
