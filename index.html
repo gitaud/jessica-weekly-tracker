@@ -866,7 +866,7 @@ function emailStatusToAdmin() {
     `Week ${w} Status Report — Jessica's Clients`,
     buildStatusReport()
   ).then(() => toast('✅ Status report sent to admin!'))
-   .catch(() => toast('❌ Email failed — check server SMTP secrets.json', true));
+   .catch((e) => toast(`❌ Email failed: ${e?.message || 'server error'}`, true));
 }
 
 function sendManualReminder() {
@@ -877,7 +877,7 @@ function sendManualReminder() {
     `Week ${autoDetectWeek()} Reminder — Tasks Due`,
     buildReminderMsg(day)
   ).then(() => toast('✅ Reminder sent to Jessica!'))
-   .catch(() => toast('❌ Email failed — check server SMTP secrets.json', true));
+   .catch((e) => toast(`❌ Email failed: ${e?.message || 'server error'}`, true));
 }
 
 // ═══════════════════════════════════════════════════════════════

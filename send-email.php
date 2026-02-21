@@ -9,10 +9,10 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-require_once __DIR__ . '/mailer.php';
+require_once __DIR__ . '/mail-service.php';
 
 try {
-    $secrets = loadSecrets(__DIR__ . '/secrets.json');
+    appSecrets(); // validate secrets early for clear API errors
 } catch (Throwable $e) {
     http_response_code(500);
     echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
@@ -32,7 +32,7 @@ if ($toEmail === '' || $subject === '' || $message === '') {
     exit;
 }
 
-$sent = sendEmailSmtp($secrets, $toEmail, $subject, $message);
+$sent = appSendEmail($toEmail, $subject, $message);
 if (!$sent['ok']) {
     http_response_code(502);
     echo json_encode(['ok' => false, 'error' => $sent['error'] ?? 'send_failed']);

@@ -3,10 +3,10 @@ declare(strict_types=1);
 
 header('Content-Type: application/json; charset=utf-8');
 
-require_once __DIR__ . '/mailer.php';
+require_once __DIR__ . '/mail-service.php';
 
 try {
-    $SECRETS = loadSecrets(__DIR__ . '/secrets.json');
+    appSecrets(); // validate secrets early
 } catch (Throwable $e) {
     http_response_code(500);
     echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
@@ -45,7 +45,7 @@ $STATUS_LABELS = [
     'na'          => '— N/A',
 ];
 
-$cronSecret = trim((string) ($SECRETS['cronSecret'] ?? ''));
+$cronSecret = appCronSecret();
 if ($cronSecret !== '') {
     $secret = (string) ($_GET['secret'] ?? '');
     if (!hash_equals($cronSecret, $secret)) {
@@ -55,8 +55,8 @@ if ($cronSecret !== '') {
     }
 }
 
-$jessEmail = trim((string) ($SECRETS['defaultJessicaEmail'] ?? ''));
-$adminEmail = trim((string) ($SECRETS['defaultAdminEmail'] ?? ''));
+$jessEmail = appDefaultJessicaEmail();
+$adminEmail = appDefaultAdminEmail();
 if ($jessEmail === '') {
     http_response_code(500);
     echo json_encode(['ok' => false, 'error' => 'missing defaultJessicaEmail in secrets.json']);
@@ -92,7 +92,7 @@ $sched = getSchedule($SCHEDULE, $week);
 $allData = loadTrackerData();
 $mail = buildReminderEmail($CLIENTS, $TASK_TYPES, $STATUS_LABELS, $allData, $week, $sched, $day);
 
-$first = sendEmailSmtp($SECRETS, $jessEmail, $mail['subject'], $mail['body']);
+$first = appSendEmail($jessEmail, $mail['subject'], $mail['body']);
 if (!$first['ok']) {
     http_response_code(502);
     echo json_encode([
@@ -105,8 +105,7 @@ if (!$first['ok']) {
 
 $adminSent = false;
 if ($adminEmail !== '' && $adminEmail !== $jessEmail) {
-    $admin = sendEmailSmtp(
-        $SECRETS,
+    $admin = appSendEmail(
         $adminEmail,
         '[COPY] ' . $mail['subject'],
         "Admin copy of reminder sent to Jessica.\n\n" . $mail['body']
