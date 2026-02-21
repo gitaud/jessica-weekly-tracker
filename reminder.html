@@ -54,6 +54,7 @@ async function run() {
   const statusEl = document.getElementById('status');
   const here = new URL(window.location.href);
   const day = (here.searchParams.get('day') || detectDay()).toLowerCase();
+  const secret = (here.searchParams.get('secret') || '').trim();
 
   if (day !== 'monday' && day !== 'friday') {
     statusEl.textContent = 'ℹ️ Not a reminder day';
@@ -63,8 +64,9 @@ async function run() {
 
   const target = new URL(ENDPOINT, here);
   target.searchParams.set('day', day);
+  if (secret) target.searchParams.set('secret', secret);
 
-  log(`Calling: ${target.pathname}?day=${day}`);
+  log(`Calling: ${target.pathname}?day=${day}${secret ? '&secret=***' : ''}`);
 
   try {
     const res = await fetch(target.toString(), { method: 'GET', cache: 'no-store' });
@@ -78,6 +80,9 @@ async function run() {
     } else {
       statusEl.className = 'err';
       statusEl.textContent = `❌ Failed (${res.status})`;
+      if (out && out.error === 'unauthorized') {
+        log('Hint: cronSecret is set in secrets.json. Open reminder.html with ?secret=YOUR_CRON_SECRET');
+      }
     }
     log(JSON.stringify(out, null, 2));
   } catch (e) {
